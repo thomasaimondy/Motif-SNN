@@ -1,44 +1,11 @@
 # -*- coding: utf-8 -*-
-
-"""
-------------------------------------------------------------------------------
-
-Copyright (C) 2019 Université catholique de Louvain (UCLouvain), Belgium.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-------------------------------------------------------------------------------
-
- "setup.py" - Setup configuration and dataset loading.
-
- Project: DRTP - Direct Random Target Projection
-
- Authors:  C. Frenkel and M. Lefebvre, Université catholique de Louvain (UCLouvain), 09/2019
-
- Cite/paper: C. Frenkel, M. Lefebvre and D. Bol, "Learning without feedback: Direct random target projection
-    as a feedback-alignment algorithm with layerwise feedforward training," arXiv preprint arXiv:1909.01311, 2019.
-
-------------------------------------------------------------------------------
-"""
-
-
 import torch
 import torchvision
 from torchvision import transforms,datasets
 import sys
 import subprocess
 import json
-#加载tidigits数据集
+
 from python_speech_features import fbank
 import numpy as np
 import numpy.random as rd
@@ -62,7 +29,7 @@ class SynthDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.dataset[0][index], self.dataset[1][index]
 
-def use_cuda(enabled, device_id=0):                               ################################################
+def use_cuda(enabled, device_id=0):                               
     """Verifies if CUDA is available and sets default device to be device_id."""
     if not enabled:
         return None
@@ -75,16 +42,12 @@ def setup(args):
     args.cuda = not args.cpu and torch.cuda.is_available()
     if args.cuda:
         print("=== The available CUDA GPU will be used for computations.")
-        #memory_load = get_gpu_memory_usage()
-        #cuda_device = np.argmin(memory_load).item()
-        #torch.cuda.set_device(cuda_device)
-        #device = torch.cuda.current_device()
         device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        #use_cuda(True, device_id=0)
+        
     else:
         device = torch.device('cpu')
 
-    kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}            #################################
+    kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}            
     if args.dataset == "regression_synth":
         print("=== Loading the synthetic regression dataset...")
         (train_loader, traintest_loader, test_loader) = load_dataset_regression_synth(args, kwargs)
@@ -121,7 +84,7 @@ def get_gpu_memory_usage():
         curr_dir = os.getcwd()
         nvsmi_dir = r"C:\Program Files\NVIDIA Corporation\NVSMI"
         os.chdir(nvsmi_dir)
-        result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used','--format=csv,nounits,noheader'])     # 执行指定的命令，如果执行状态码为0则返回命令执行结果，否则抛出异常
+        result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used','--format=csv,nounits,noheader'])     
         os.chdir(curr_dir)
     else:
         result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used','--format=csv,nounits,noheader'])
@@ -136,7 +99,7 @@ def load_dataset_regression_synth(args, kwargs):
     train_loader     = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,      shuffle=True , **kwargs)
     traintest_loader = torch.utils.data.DataLoader(trainset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
     test_loader      = torch.utils.data.DataLoader(testset , batch_size=args.test_batch_size, shuffle=False, **kwargs)
-#    train_loader = train_loader[1:100]          #####################################
+
     args.input_size     = trainset.input_size
     args.input_channels = trainset.input_channels
     args.label_features = trainset.label_features
@@ -159,10 +122,10 @@ def load_dataset_classification_synth(args, kwargs):
     return (train_loader, traintest_loader, test_loader)
 
 def load_dataset_mnist(args, kwargs):
-    train_loader     = torch.utils.data.DataLoader(datasets.MNIST('/home/user/zuoruichen/code/Motif/DATASETS/MNIST', train=True,  download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,),(1.0,))])), batch_size=args.batch_size,      shuffle=True , **kwargs)     ###############
+    train_loader     = torch.utils.data.DataLoader(datasets.MNIST('/home/user/zuoruichen/code/Motif/DATASETS/MNIST', train=True,  download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,),(1.0,))])), batch_size=args.batch_size,      shuffle=True , **kwargs)     
     traintest_loader = torch.utils.data.DataLoader(datasets.MNIST('/home/user/zuoruichen/code/Motif/DATASETS/MNIST', train=True,  download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,),(1.0,))])), batch_size=args.test_batch_size, shuffle=False, **kwargs)
     test_loader      = torch.utils.data.DataLoader(datasets.MNIST('/home/user/zuoruichen/code/Motif/DATASETS/MNIST', train=False, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,),(1.0,))])), batch_size=args.test_batch_size, shuffle=False, **kwargs)
-#    train_loader = train_loader[1:100]      ####################################
+
     args.input_size     = 28
     args.input_channels = 1
     args.label_features = 10
@@ -184,16 +147,16 @@ def load_dataset_cifar10(args, kwargs):
     return (train_loader, traintest_loader, test_loader)
 
 def load_dataset_cifar10_augmented(args, kwargs):
-    #Source: https://zhenye-na.github.io/2018/09/28/pytorch-cnn-cifar10.html
+    
 
     transform_train = transforms.Compose([
-        transforms.RandomHorizontalFlip(),      # 依据概率p对PIL图片进行水平翻转，p-概率，默认值为0.5
-        transforms.ToTensor(),          # 将PIL Image或者 ndarray 转换为tensor，并且归一化至[0-1]，是直接除以255，若自己的ndarray数据尺度有变化，则需要自行修改。
+        transforms.RandomHorizontalFlip(),      
+        transforms.ToTensor(),          
         transforms.Normalize(mean=[x/255.0 for x in [125.3, 123.0, 113.9]],
                              std=[x/255.0 for x in [63.0, 62.1, 66.7]]),
     ])
 
-    # Normalize the test set same as training set without augmentation
+    
     transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[x/255.0 for x in [125.3, 123.0, 113.9]], std=[x/255.0 for x in [63.0, 62.1, 66.7]]),])
 
     trainset = torchvision.datasets.CIFAR10('./DATASETS/CIFAR10AUG', train=True, download=True, transform=transform_train)
@@ -219,13 +182,13 @@ def read_data(path, n_bands, n_frames):
         for file in files:
             if file.endswith('.waV') and file[0] != 'O':
                 filelist.append(os.path.join(root, file))
-    # filelist = filelist[:1002]
+    
 
     n_samples = len(filelist)
 
     def keyfunc(x):
         s = x.split('/')
-        return (s[-1][0], s[-2], s[-1][1]) # BH/1A_endpt.wav: sort by '1', 'BH', 'A'
+        return (s[-1][0], s[-2], s[-1][1]) 
     filelist.sort(key=keyfunc)
 
     feats = np.empty((n_samples, 1, n_bands, n_frames))
@@ -233,7 +196,7 @@ def read_data(path, n_bands, n_frames):
     with tqdm(total=len(filelist)) as pbar:
         for i, file in enumerate(filelist):
             pbar.update(1)
-            label = file.split('/')[-1][0]  # if using windows, change / into \\
+            label = file.split('/')[-1][0]  
             if label == 'Z':
                 labels[i] = np.long(0)
             else:
@@ -243,17 +206,11 @@ def read_data(path, n_bands, n_frames):
             winlen = duration / (n_frames * (1 - overlap) + overlap)
             winstep = winlen * (1 - overlap)
             feat, energy = fbank(sig, rate, winlen, winstep, nfilt=n_bands, nfft=4096, winfunc=np.hamming)
-            # feat = np.log(feat)
+            
             final_feat = feat[:n_frames]
             final_feat = normalize(final_feat, norm='l1', axis=0)
             feats[i] = np.expand_dims(np.array(final_feat),axis=0)
-        # feats[i] = feat[:n_frames].flatten() # feat may have 41 or 42 frames
-        # feats[i] = feat.flatten() # feat may have 41 or 42 frames
-
-    # feats = normalize(feats, norm='l2', axis=1)
-    # normalization
-    # feats = preprocessing.scale(feats)
-
+       
     np.random.seed(42)
     p = np.random.permutation(n_samples)
     feats, labels = feats[p], labels[p]
@@ -296,7 +253,7 @@ class Tidigits(Dataset):
                 [train_set, val_set, test_set] = pickle.load(fr)
         else:
             print('Tidigits Dataset Has not been Processed, now do it.')
-            train_set, val_set, test_set = read_data(path=rootfile+'/DATASETS/tidigits/isolated_digits_tidigits', n_bands=n_bands, n_frames=n_frames)#(2900, 1640) (2900,)
+            train_set, val_set, test_set = read_data(path=rootfile+'/DATASETS/tidigits/isolated_digits_tidigits', n_bands=n_bands, n_frames=n_frames)
             with open(dataname,'wb') as fw:
                 pickle.dump([train_set, val_set, test_set],fw)
         if train_or_test == 'train':
@@ -345,7 +302,7 @@ class Gesture(Dataset):
     def __len__(self):
         return len(self.x_values)
 
-#以下是TIMIT数据集的读取程序
+
 def pad_vector(v, n_time, pad_value=0.):
     if len(v.shape) == 2:
         shp = v.shape
@@ -365,14 +322,6 @@ def sparsity_dense_vector(vector, blank_symbol):
         value = vector[ind]
         indices.append(ind)
         values.append(value)
-        # last_value=value
-
-    # last_v = blank_symbol
-    # for v in values:
-    #     assert v != blank_symbol, 'v: {}'.format(blank_symbol)
-    #     assert v != last_v, 'v {} last_v {} '.format(v,last_v)
-    #     last_v = v
-
     return np.array(indices, dtype=np.int), np.array(values, dtype=np.int)
 
 def label_stack_to_sparse_tensor(label_stack, blank_symbol):
@@ -403,11 +352,11 @@ class Timit(Dataset):
 
         self.epsilon = epsilon
 
-        self.n_feats = {'fbank': 41 * 3, 'mfccs': 13 * 3, 'htk': 13 * 3 if 'htk_mfcc' in data_path else 41 * 3, 'cochspec': 86 * 3, 'cochspike': 86} # 'mfccspike': 13 * 31, 'melspec': 16 * 3, 'melspike': 496
+        self.n_feats = {'fbank': 41 * 3, 'mfccs': 13 * 3, 'htk': 13 * 3 if 'htk_mfcc' in data_path else 41 * 3, 'cochspec': 86 * 3, 'cochspike': 86} 
         self.n_features = self.n_feats[preproc]
         self.n_phns = 39 if use_reduced_phonem_set else 61
 
-        # Load features from files
+        
         self.feature_stack_train, self.phonem_stack_train, self.meta_data_train, _, _ = self.load_data_stack('train')
         self.feature_stack_test, self.phonem_stack_test, self.meta_data_test, self.vocabulary, self.wav_test = self.load_data_stack('test')
         self.feature_stack_develop, self.phonem_stack_develop, self.meta_data_develop, self.vocabulary, self.wav_val = self.load_data_stack('develop')
@@ -415,7 +364,7 @@ class Timit(Dataset):
         def add_derivatives(features):
             n_features = features[0].shape[1]
 
-            # add derivatives:
+            
             get_delta = lambda v : np.concatenate([np.zeros((1, v.shape[1])), v[2:] - v[:-2], np.zeros((1, v.shape[1]))],axis = 0)
             d_features = [get_delta(f) for f in features]
             d2_features = [get_delta(f) for f in d_features]
@@ -429,7 +378,7 @@ class Timit(Dataset):
             self.feature_stack_test = add_derivatives(self.feature_stack_test)
             self.feature_stack_develop = add_derivatives(self.feature_stack_develop)
 
-        # normalize the features
+        
         concatenated_training_features = np.concatenate(self.feature_stack_train, axis = 0)
         means = np.mean(concatenated_training_features, axis = 0)
         stds = np.std(concatenated_training_features, axis = 0)
@@ -449,7 +398,7 @@ class Timit(Dataset):
         self.n_test = len(self.feature_stack_test)
         self.n_develop = len(self.feature_stack_develop)
 
-        # print('Dataset sizes: test {} \t train {} \t validation {}'.format(self.n_test,self.n_train,self.n_develop))
+        
 
     def __len__(self):
         if self.phase == 'train':
@@ -465,19 +414,14 @@ class Timit(Dataset):
     def load_data_stack(self, dataset):
         path = os.path.join(self.data_path, dataset)
 
-        # Define the link to the pickle objects
+        
         if self.preproc == 'fbank':
             feature_path = os.path.join(path, 'filter_banks.pickle')
         elif self.preproc == 'mfccs':
             feature_path = os.path.join(path, 'mfccs.pickle')
         elif self.preproc == 'htk':
             feature_path = os.path.join(path, 'htk.pickle')
-        # elif self.preproc == 'mfccspike':
-        #     feature_path = os.path.join(path, 'mfcc_spike_stack.pickle')
-        # elif self.preproc == 'melspec':
-        #     feature_path = os.path.join(path, 'specgram.pickle')
-        # elif self.preproc == 'melspike':
-        #     feature_path = os.path.join(path, 'spike.pickle')
+   
         elif self.preproc == 'cochspec':
             feature_path = os.path.join(path, 'coch_raw.pickle')
         elif self.preproc == 'cochspike':
@@ -492,7 +436,7 @@ class Timit(Dataset):
             phonem_path = os.path.join(path, 'phonems.pickle')
             vocabulary_path = os.path.join(path, 'phonem_list.json')
 
-        # Load the data
+        
         with open(feature_path, 'rb') as f:
             data_stack = pickle.load(f)
 
@@ -503,24 +447,24 @@ class Timit(Dataset):
                 assert ((np.array(phns) < self.n_phns).all()), 'Found phonems up to {} should be maximum {}'.format(
                     np.max(phns), self.n_phns)
 
-        # Load the vocabulay
+        
         with open(vocabulary_path, 'r') as f:
             vocabulary = json.load(f)
 
-        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h#')
+        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h
         self.silence_symbol_id = 0
 
-        # Load meta data
+        
         with open(os.path.join(path, 'metadata.pickle'), 'rb') as f:
             metadata = pickle.load(f)
 
-        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h#')
+        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h
         self.silence_symbol_id = 0
 
         with open(os.path.join(path, 'reduced_phn_index_mapping.json'), 'r') as f:
             self.phonem_reduction_map = json.load(f)
 
-        # Load raw audio
+        
         wav_path = os.path.join(path, 'wav.pickle')
         with open(wav_path, 'rb') as f:
             wav_stack = pickle.load(f)
@@ -542,17 +486,17 @@ class Timit(Dataset):
             wavs = self.wav_val[idx]
 
         seq_len = feature_stack.shape[0]
-        #feature = feature_stack
+        
         feature = pad_vector(feature_stack, self.n_time)
 
         if self.return_sparse_phn_tensor:
             phns = label_stack_to_sparse_tensor(phonem_stack, self.silence_symbol_id)
         else:
             phns = pad_vector(phonem_stack, self.n_time, self.silence_symbol_id)
-            #phns = phonem_stack
+            
             
         return torch.FloatTensor(feature), torch.LongTensor(phns), seq_len
-#以上是TIMIT数据集的读取程序
+
 
 def load_dataset_tidigits(args, kwargs):
     
@@ -569,8 +513,6 @@ def load_dataset_tidigits(args, kwargs):
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=args.batch_size,shuffle = True, drop_last = True)
     traintest_loader = torch.utils.data.DataLoader(dataset=traintest_dataset, batch_size=args.test_batch_size,shuffle = False,drop_last = True)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=args.test_batch_size,shuffle = False,drop_last = True)
-#    train_loader = train_loader[1:100]      #######################
-    
 
     return (train_loader, traintest_loader, test_loader)
 
