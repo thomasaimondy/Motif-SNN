@@ -15,7 +15,7 @@ class FA_wrapper(nn.Module):
         self.output_grad = None
         self.x_shape = None
 
-        
+        # FA feedback weights definition
         self.fixed_fb_weights = nn.Parameter(torch.Tensor(torch.Size(dim)))
         self.reset_weights()
 
@@ -55,7 +55,7 @@ class TrainingHook(nn.Module):
         self.train_mode = train_mode
         assert train_mode in ["BP", "FA", "DFA", "DRTP", "sDFA", "shallow"], "=== ERROR: Unsupported hook training mode " + train_mode + "."
         
-        
+        # Feedback weights definition (FA feedback weights are handled in the FA_wrapper class)
         if self.train_mode in ["DFA", "DRTP", "sDFA"]:
             self.fixed_fb_weights = nn.Parameter(torch.Tensor(torch.Size(dim_hook)))
             self.reset_weights()
@@ -67,7 +67,7 @@ class TrainingHook(nn.Module):
         self.fixed_fb_weights.requires_grad = False
 
     def forward(self, input, labels, y):
-        return trainingHook(input, labels, y, self.fixed_fb_weights, self.train_mode if (self.train_mode != "FA") else "BP") 
+        return trainingHook(input, labels, y, self.fixed_fb_weights, self.train_mode if (self.train_mode != "FA") else "BP") #FA is handled in FA_wrapper, not in TrainingHook
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + self.train_mode + ')'

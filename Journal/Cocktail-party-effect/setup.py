@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-
 import torch
 import torchvision
 from torchvision import transforms,datasets
 import sys
 import subprocess
 import json
-
 from python_speech_features import fbank
 import numpy as np
 import numpy.random as rd
@@ -19,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn import preprocessing
 import scipy.io as sio
 from collections import  Counter
+import utils
 
 class SynthDataset(torch.utils.data.Dataset):
 
@@ -44,9 +43,7 @@ def setup(args):
     args.cuda = not args.cpu and torch.cuda.is_available()
     if args.cuda:
         print("=== The available CUDA GPU will be used for computations.")
-        
         device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        
     else:
         device = torch.device('cpu')
 
@@ -153,7 +150,7 @@ def load_dataset_cifar10(args, kwargs):
     return (train_loader, traintest_loader, test_loader)
 
 def load_dataset_cifar10_augmented(args, kwargs):
-    
+    #Source: https://zhenye-na.github.io/2018/09/28/pytorch-cnn-cifar10.html
 
     transform_train = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -162,7 +159,7 @@ def load_dataset_cifar10_augmented(args, kwargs):
                              std=[x/255.0 for x in [63.0, 62.1, 66.7]]),
     ])
 
-    
+    # Normalize the test set same as training set without augmentation
     transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[x/255.0 for x in [125.3, 123.0, 113.9]], std=[x/255.0 for x in [63.0, 62.1, 66.7]]),])
 
     trainset = torchvision.datasets.CIFAR10('./DATASETS/CIFAR10AUG', train=True, download=True, transform=transform_train)
@@ -188,13 +185,13 @@ def read_data(path, n_bands, n_frames):
         for file in files:
             if file.endswith('.waV') and file[0] != 'O':
                 filelist.append(os.path.join(root, file))
-    
+    # filelist = filelist[:1002]
 
     n_samples = len(filelist)
 
     def keyfunc(x):
         s = x.split('/')
-        return (s[-1][0], s[-2], s[-1][1]) 
+        return (s[-1][0], s[-2], s[-1][1]) # BH/1A_endpt.wav: sort by '1', 'BH', 'A'
     filelist.sort(key=keyfunc)
 
     feats = np.empty((n_samples, 1, n_bands, n_frames))
@@ -202,7 +199,7 @@ def read_data(path, n_bands, n_frames):
     with tqdm(total=len(filelist)) as pbar:
         for i, file in enumerate(filelist):
             pbar.update(1)
-            label = file.split('/')[-1][0]  
+            label = file.split('/')[-1][0]  # if using windows, change / into \\
             if label == 'Z':
                 labels[i] = np.long(0)
             else:
@@ -212,11 +209,11 @@ def read_data(path, n_bands, n_frames):
             winlen = duration / (n_frames * (1 - overlap) + overlap)
             winstep = winlen * (1 - overlap)
             feat, energy = fbank(sig, rate, winlen, winstep, nfilt=n_bands, nfft=4096, winfunc=np.hamming)
-            
+            # feat = np.log(feat)
             final_feat = feat[:n_frames]
             final_feat = normalize(final_feat, norm='l1', axis=0)
             feats[i] = np.expand_dims(np.array(final_feat),axis=0)
-        
+
     np.random.seed(42)
     p = np.random.permutation(n_samples)
     feats, labels = feats[p], labels[p]
@@ -252,20 +249,48 @@ class Tidigits(Dataset):
         super(Tidigits, self).__init__()
         self.n_bands = n_bands
         self.n_frames = n_frames
-        rootfile = '/home/user/zuoruichen/code/Motif'
+        rootfile = '/home/jiashuncheng/code/EAST'
         dataname = rootfile + '/DATASETS/tidigits/packed_tidigits_nbands_'+str(n_bands)+'_nframes_' + str(n_frames)+'.pkl'
         if os.path.exists(dataname):
             with open(dataname,'rb') as fr:
                 [train_set, val_set, test_set] = pickle.load(fr)
         else:
             print('Tidigits Dataset Has not been Processed, now do it.')
-            train_set, val_set, test_set = read_data(path=rootfile+'/DATASETS/tidigits/isolated_digits_tidigits', n_bands=n_bands, n_frames=n_frames)
+            train_set, val_set, test_set = read_data(path=rootfile+'/DATASETS/tidigits/isolated_digits_tidigits', n_bands=n_bands, n_frames=n_frames)#(2900, 1640) (2900,)
             with open(dataname,'wb') as fw:
                 pickle.dump([train_set, val_set, test_set],fw)
+
+        ## begin split the dataset
+        train_set = self.sort(train_set)
+        test_set = self.sort(test_set)
+        val_set = self.sort(val_set)
+        # counter
+        counter_tid_train = Counter(train_set[1])
+        counter_tid_train = list(dict(counter_tid_train).values())
+        counter_tid_test = Counter(test_set[1])
+        counter_tid_test = list(dict(counter_tid_test).values())
+        if utils.args.mode==6:
+            xx_train_tid = sum(counter_tid_train[0:9])
+            yy_train_tid = sum(counter_tid_train[0:10])
+            xx_test_tid = sum(counter_tid_test[0:9])
+            yy_test_tid = sum(counter_tid_test[0:10])
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        else:
+            print('Full dataset')
+        ## end split the dataset
+        
+
         if train_or_test == 'train':
             self.x_values = train_set[0]
             self.y_values = train_set[1]
-
         elif train_or_test == 'test':
             self.x_values = test_set[0]
             self.y_values = test_set[1]
@@ -282,6 +307,12 @@ class Tidigits(Dataset):
     
     def __len__(self):
         return len(self.x_values)
+
+    def sort(self, train):
+        idx = np.argsort(train[1])
+        train_set0 = train[0][idx]
+        train_set1 = train[1][idx]
+        return (train_set0, train_set1)
 
 import os
 import struct
@@ -314,7 +345,7 @@ class MNISTTidigits(Dataset):
         super(MNISTTidigits, self).__init__()
         self.n_bands = n_bands
         self.n_frames = n_frames
-        rootfile = '/home/user/zuoruichen/code/Motif'
+        rootfile = '/home/jiashuncheng/code/EAST'
         dataname = rootfile + '/DATASETS/tidigits/packed_tidigits_nbands_' + str(n_bands) + '_nframes_' + str(
             n_frames) + '.pkl'
         if os.path.exists(dataname):
@@ -323,28 +354,28 @@ class MNISTTidigits(Dataset):
         else:
             print('Tidigits Dataset Has not been Processed, now do it.')
             train_set, val_set, test_set = read_data(path=rootfile + '/DATASETS/tidigits/isolated_digits_tidigits',
-                                                     n_bands=n_bands, n_frames=n_frames)  
+                                                     n_bands=n_bands, n_frames=n_frames)  # (2900, 1640) (2900,)
             with open(dataname, 'wb') as fw:
                 pickle.dump([train_set, val_set, test_set], fw)
-        mnist_train_set = load_mnist('/home/user/zuoruichen/code/Motif/DATASETS/raw', 'train')
-        mnist_test_set = load_mnist('/home/user/zuoruichen/code/Motif/DATASETS/raw', 't10k')
-        
+        mnist_train_set = load_mnist('/home/jiashuncheng/code/CASNN/casnn/DATASETS/MNIST/raw', 'train')
+        mnist_test_set = load_mnist('/home/jiashuncheng/code/CASNN/casnn/DATASETS/MNIST/raw', 't10k')
         train_set = self.sort(train_set)
         test_set = self.sort(test_set)
         val_set = self.sort(val_set)
         mnist_train_set = self.sort(mnist_train_set)
         mnist_test_set = self.sort(mnist_test_set)
-        
         counter_tid_train = Counter(train_set[1])
+        counter_tid_train = list(dict(counter_tid_train).values())
         counter_tid_test = Counter(test_set[1])
+        counter_tid_test = list(dict(counter_tid_test).values())
         counter_mni_train = Counter(mnist_train_set[1])
+        counter_mni_train = list(dict(counter_mni_train).values())
         counter_mni_test = Counter(mnist_test_set[1])
-        
+        counter_mni_test = list(dict(counter_mni_test).values())
         mnist_train_sample = np.zeros((train_set[0].shape[0], 784))
         mnist_train_label = np.zeros((train_set[0].shape[0],))
         mnist_test_sample = np.zeros((test_set[0].shape[0], 784))
         mnist_test_label = np.zeros((test_set[0].shape[0],))
-        
         x2_train = 0
         y2_train = 0
         x2_test = 0
@@ -364,31 +395,181 @@ class MNISTTidigits(Dataset):
             mnist_test_sample[x1_test:x2_test, :] = mnist_test_set[0][y1_test:y1_test + counter_tid_test[i], :]
             mnist_test_label[x1_test:x2_test] = mnist_test_set[1][y1_test:y1_test + counter_tid_test[i]]
 
+        if utils.args.mode == 1:
+            ## Mode 1 MNIST 2 TID 2
+            xx_train_mnist = counter_tid_train[0]+counter_tid_train[1]
+            yy_train_mnist = counter_tid_train[0]+counter_tid_train[1]+counter_tid_train[2]
+            xx_test_mnist = counter_tid_test[0]+counter_tid_test[1]
+            yy_test_mnist = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist, :]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist, ]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist, :]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = counter_tid_train[0] + counter_tid_train[1]
+            yy_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2]
+            xx_test_tid = counter_tid_test[0] + counter_tid_test[1]
+            yy_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        elif utils.args.mode == 2:
+            ## Mode 2 MNIST 3 TID 3
+            xx_train_mnist = counter_tid_train[0]+counter_tid_train[1]+counter_tid_train[2]
+            yy_train_mnist = counter_tid_train[0]+counter_tid_train[1]+counter_tid_train[2]+counter_tid_train[3]
+            xx_test_mnist = counter_tid_test[0]+counter_tid_test[1] + counter_tid_test[2]
+            yy_test_mnist = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2] + counter_tid_test[3]
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist,:]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist,]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist,:]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2]
+            yy_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2] + counter_tid_train[3]
+            xx_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            yy_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2] + counter_tid_test[3]
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid,:]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        elif utils.args.mode == 3:
+            ## Mode 3 MNIST 2 TID 3
+            xx_train_mnist = counter_tid_train[0] + counter_tid_train[1]
+            yy_train_mnist = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2]
+            xx_test_mnist = counter_tid_test[0] + counter_tid_test[1]
+            yy_test_mnist = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist, :]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist, ]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist, :]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2]
+            yy_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2] + counter_tid_train[3]
+            xx_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            yy_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2] + counter_tid_test[3]
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        elif utils.args.mode == 4:
+            ## Mode 4 MNIST 3 TID 2
+            xx_train_mnist = counter_tid_train[0]+counter_tid_train[1]+counter_tid_train[2]
+            yy_train_mnist = counter_tid_train[0]+counter_tid_train[1]+counter_tid_train[2]+counter_tid_train[3]
+            xx_test_mnist = counter_tid_test[0]+counter_tid_test[1] + counter_tid_test[2]
+            yy_test_mnist = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2] + counter_tid_test[3]
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist, :]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist, ]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist, :]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = counter_tid_train[0] + counter_tid_train[1]
+            yy_train_tid = counter_tid_train[0] + counter_tid_train[1] + counter_tid_train[2]
+            xx_test_tid = counter_tid_test[0] + counter_tid_test[1]
+            yy_test_tid = counter_tid_test[0] + counter_tid_test[1] + counter_tid_test[2]
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        elif utils.args.mode == 5:
+            ## Mode 5 MNIST 8 TID 9
+            xx_train_mnist = sum(counter_tid_train[0:8])
+            yy_train_mnist = sum(counter_tid_train[0:9])
+            xx_test_mnist = sum(counter_tid_test[0:8])
+            yy_test_mnist = sum(counter_tid_test[0:9])
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist, :]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist, ]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist, :]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = sum(counter_tid_train[0:9])
+            yy_train_tid = sum(counter_tid_train[0:10])
+            xx_test_tid = sum(counter_tid_test[0:9])
+            yy_test_tid = sum(counter_tid_test[0:10])
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+        elif utils.args.mode == 6:
+            ## Mode 6 MNIST 9 TID 9
+            xx_train_mnist = sum(counter_tid_train[0:9])
+            yy_train_mnist = sum(counter_tid_train[0:10])
+            xx_test_mnist = sum(counter_tid_test[0:9])
+            yy_test_mnist = sum(counter_tid_test[0:10])
+            mnist_train_sample = mnist_train_sample[xx_train_mnist:yy_train_mnist, :]
+            mnist_train_label = mnist_train_label[xx_train_mnist:yy_train_mnist, ]
+            mnist_test_sample = mnist_test_sample[xx_test_mnist:yy_test_mnist, :]
+            mnist_test_label = mnist_test_label[xx_test_mnist:yy_test_mnist]
+            xx_train_tid = sum(counter_tid_train[0:9])
+            yy_train_tid = sum(counter_tid_train[0:10])
+            xx_test_tid = sum(counter_tid_test[0:9])
+            yy_test_tid = sum(counter_tid_test[0:10])
+            train_set = list(train_set)
+            test_set = list(test_set)
+            val_set = list(val_set)
+            train_set[0] = train_set[0][xx_train_tid:yy_train_tid, :]
+            val_set[0] = val_set[0][xx_train_tid:yy_train_tid, :]
+            test_set[0] = test_set[0][xx_test_tid:yy_test_tid, :]
+            train_set[1] = train_set[1][xx_train_tid:yy_train_tid]
+            val_set[1] = val_set[1][xx_train_tid:yy_train_tid]
+            test_set[1] = test_set[1][xx_test_tid:yy_test_tid]
+
+        else:
+            print('Full dataset.')
+            print('#'*20)
+
         if train_or_test == 'train':
             self.x_values = train_set[0]
-            self.x_values_mnist = mnist_train_sample
+            self.x_values_mnist = mnist_train_sample/255.0
             self.y_values = train_set[1]
             self.y_values_mnist = mnist_train_label
         elif train_or_test == 'test':
             self.x_values = test_set[0]
-            self.x_values_mnist = mnist_test_sample
+            self.x_values_mnist = mnist_test_sample/255.0
             self.y_values = test_set[1]
             self.y_values_mnist = mnist_test_label
         elif train_or_test == 'valid':
             self.x_values = val_set[0]
-            self.x_values_mnist = mnist_train_sample
+            self.x_values_mnist = mnist_train_sample/255.0
             self.y_values = val_set[1]
             self.y_values_mnist = mnist_train_label
         self.transform = transform
         self.target_transform = target_transform
 
     def __getitem__(self, index):
-        sample = (self.x_values[index], np.expand_dims(self.x_values_mnist[index].reshape(28,28), axis=0))
-        label = (self.y_values[index], self.y_values_mnist[index].astype(int))
+        if utils.args.data_mode == 'TM': # TM, MM, TT
+            sample = (self.x_values[index], np.expand_dims(self.x_values_mnist[index].reshape(28,28), axis=0))
+            label = (self.y_values[index], self.y_values_mnist[index].astype(int))
+        elif utils.args.data_mode == 'MM':
+            sample = (np.expand_dims(self.x_values_mnist[index].reshape(28,28), axis=0), np.expand_dims(self.x_values_mnist[index].reshape(28,28), axis=0))
+            label = (self.y_values_mnist[index].astype(int), self.y_values_mnist[index].astype(int))
+        elif utils.args.data_mode == 'TT':
+            sample = (self.x_values[index], self.x_values[index])
+            label = (self.y_values[index], self.y_values[index])
         return sample, label
 
     def __len__(self):
-        return len(self.x_values)
+        return min(len(self.x_values), len(self.x_values_mnist))
 
     def sort(self, train):
         idx = np.argsort(train[1])
@@ -422,7 +603,6 @@ class Gesture(Dataset):
     def __len__(self):
         return len(self.x_values)
 
-
 def pad_vector(v, n_time, pad_value=0.):
     if len(v.shape) == 2:
         shp = v.shape
@@ -442,7 +622,7 @@ def sparsity_dense_vector(vector, blank_symbol):
         value = vector[ind]
         indices.append(ind)
         values.append(value)
-        
+
     return np.array(indices, dtype=np.int), np.array(values, dtype=np.int)
 
 def label_stack_to_sparse_tensor(label_stack, blank_symbol):
@@ -477,7 +657,7 @@ class Timit(Dataset):
         self.n_features = self.n_feats[preproc]
         self.n_phns = 39 if use_reduced_phonem_set else 61
 
-        
+       
         self.feature_stack_train, self.phonem_stack_train, self.meta_data_train, _, _ = self.load_data_stack('train')
         self.feature_stack_test, self.phonem_stack_test, self.meta_data_test, self.vocabulary, self.wav_test = self.load_data_stack('test')
         self.feature_stack_develop, self.phonem_stack_develop, self.meta_data_develop, self.vocabulary, self.wav_val = self.load_data_stack('develop')
@@ -499,7 +679,7 @@ class Timit(Dataset):
             self.feature_stack_test = add_derivatives(self.feature_stack_test)
             self.feature_stack_develop = add_derivatives(self.feature_stack_develop)
 
-        
+        # normalize the features
         concatenated_training_features = np.concatenate(self.feature_stack_train, axis = 0)
         means = np.mean(concatenated_training_features, axis = 0)
         stds = np.std(concatenated_training_features, axis = 0)
@@ -519,8 +699,6 @@ class Timit(Dataset):
         self.n_test = len(self.feature_stack_test)
         self.n_develop = len(self.feature_stack_develop)
 
-        
-
     def __len__(self):
         if self.phase == 'train':
             return self.n_train
@@ -535,14 +713,13 @@ class Timit(Dataset):
     def load_data_stack(self, dataset):
         path = os.path.join(self.data_path, dataset)
 
-        
+        # Define the link to the pickle objects
         if self.preproc == 'fbank':
             feature_path = os.path.join(path, 'filter_banks.pickle')
         elif self.preproc == 'mfccs':
             feature_path = os.path.join(path, 'mfccs.pickle')
         elif self.preproc == 'htk':
             feature_path = os.path.join(path, 'htk.pickle')
-        
         elif self.preproc == 'cochspec':
             feature_path = os.path.join(path, 'coch_raw.pickle')
         elif self.preproc == 'cochspike':
@@ -557,7 +734,7 @@ class Timit(Dataset):
             phonem_path = os.path.join(path, 'phonems.pickle')
             vocabulary_path = os.path.join(path, 'phonem_list.json')
 
-        
+        # Load the data
         with open(feature_path, 'rb') as f:
             data_stack = pickle.load(f)
 
@@ -568,24 +745,24 @@ class Timit(Dataset):
                 assert ((np.array(phns) < self.n_phns).all()), 'Found phonems up to {} should be maximum {}'.format(
                     np.max(phns), self.n_phns)
 
-        
+        # Load the vocabulay
         with open(vocabulary_path, 'r') as f:
             vocabulary = json.load(f)
 
-        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h
+        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h#')
         self.silence_symbol_id = 0
 
-        
+        # Load meta data
         with open(os.path.join(path, 'metadata.pickle'), 'rb') as f:
             metadata = pickle.load(f)
 
-        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h
+        assert vocabulary[0] == ('sil' if self.use_reduced_phonem_set else 'h#')
         self.silence_symbol_id = 0
 
         with open(os.path.join(path, 'reduced_phn_index_mapping.json'), 'r') as f:
             self.phonem_reduction_map = json.load(f)
 
-        
+        # Load raw audio
         wav_path = os.path.join(path, 'wav.pickle')
         with open(wav_path, 'rb') as f:
             wav_stack = pickle.load(f)
@@ -607,21 +784,20 @@ class Timit(Dataset):
             wavs = self.wav_val[idx]
 
         seq_len = feature_stack.shape[0]
-        
+        #feature = feature_stack
         feature = pad_vector(feature_stack, self.n_time)
 
         if self.return_sparse_phn_tensor:
             phns = label_stack_to_sparse_tensor(phonem_stack, self.silence_symbol_id)
         else:
             phns = pad_vector(phonem_stack, self.n_time, self.silence_symbol_id)
-            
+            #phns = phonem_stack
             
         return torch.FloatTensor(feature), torch.LongTensor(phns), seq_len
 
-
 def load_dataset_tidigits(args, kwargs):
-    n_bands = 28  
-    n_frames = 28  
+    n_bands = 28  #############
+    n_frames = 28  ##############
     args.input_size = n_bands
     args.input_channels = 1
     args.label_features = 10
@@ -640,10 +816,12 @@ def load_dataset_tidigits(args, kwargs):
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=args.test_batch_size, shuffle=False,
                                               drop_last=True)
 
+    return (train_loader, traintest_loader, test_loader)
+
 def load_dataset_MNISTtidigits(args, kwargs):
     
-    n_bands = 28        
-    n_frames = 28       
+    n_bands = 28        #############
+    n_frames = 28       ##############
     args.input_size = n_bands
     args.input_channels = 1
     args.label_features = 10
@@ -655,8 +833,6 @@ def load_dataset_MNISTtidigits(args, kwargs):
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=args.batch_size,shuffle = True, drop_last = True)
     traintest_loader = torch.utils.data.DataLoader(dataset=traintest_dataset, batch_size=args.test_batch_size,shuffle = False,drop_last = True)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=args.test_batch_size,shuffle = False,drop_last = True)
-
-
 
     return (train_loader, traintest_loader, test_loader)
 

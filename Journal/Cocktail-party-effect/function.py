@@ -23,12 +23,11 @@ class HookFunction(Function):
         
         input, labels, y, fixed_fb_weights = ctx.saved_variables
         if train_mode == "DFA":
-            grad_output_est = (y-labels).mm(fixed_fb_weights.view(-1,prod(fixed_fb_weights.shape[1:]))).view(grad_output.shape)     
+            grad_output_est = (y-labels).mm(fixed_fb_weights.view(-1,prod(fixed_fb_weights.shape[1:]))).view(grad_output.shape)     #mm:相乘 view拼成一维
         elif train_mode == "sDFA":
             grad_output_est = torch.sign(y-labels).mm(fixed_fb_weights.view(-1,prod(fixed_fb_weights.shape[1:]))).view(grad_output.shape)
         elif train_mode == "DRTP":
             grad_output_est = labels.mm(fixed_fb_weights.view(-1,prod(fixed_fb_weights.shape[1:]))).view(grad_output.shape)
-       
         else:
             raise NameError("=== ERROR: training mode " + str(train_mode) + " not supported")
 
